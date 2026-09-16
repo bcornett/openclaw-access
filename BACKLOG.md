@@ -6,10 +6,11 @@
 - Compatibility fallback for older servers with CLI list/approve only.
 - Universal Apple Silicon/Intel build, macOS 13+.
 - Isolated integration tests for command handling, failures, and timeout.
-- Visual verification of missing installation and request detail states.
+- Visual verification of missing installation, request details, and settings sheet.
+- Portable DMG with Applications shortcut and installation guide.
 
 ## In progress
-- Final settings-sheet visual check and portable installer packaging.
+- None. Installer packaging and final checks complete.
 
 ## Next
 - Client Mac acceptance against its installed OpenClaw and a real pending request.
