@@ -8,6 +8,7 @@
 - Isolated integration tests for command handling, failures, and timeout.
 - Visual verification of missing installation, request details, and settings sheet.
 - Portable DMG with Applications shortcut and installation guide.
+- Published v1.0.0 at https://github.com/bcornett/openclaw-access/releases/tag/v1.0.0; unauthenticated download verified against the local installer checksum.
 
 ## In progress
 - None. Installer packaging and final checks complete.
