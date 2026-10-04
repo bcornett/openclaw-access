@@ -9,12 +9,17 @@
 - Visual verification of missing installation, request details, and settings sheet.
 - Portable DMG with Applications shortcut and installation guide.
 - Published v1.0.0 at https://github.com/bcornett/openclaw-access/releases/tag/v1.0.0; unauthenticated download verified against the local installer checksum.
+- v1.1.0 Schedules view (PGT card "Frank access app: restore cron schedule management"): list of OpenClaw scheduled jobs with plain timing, next run, last result, paused state; busy-hours map of job starts per weekday and hour; change days and time, cron expression, time zone, or interval; pause and resume; confirmation before every change. Uses cron.list and cron.update only.
+- Tests for schedule reading and wording, busy-hour counts, paging, exact update requests, and a rejected change.
+- `./ui.sh` offscreen click-through of the views against the fixture (edit, confirm, save, resume, typed input, rejected change, missing install, dark, minimum size).
+- `./package.sh` builds the installer DMG.
 
 ## In progress
-- None. Installer packaging and final checks complete.
+- v1.1.0 pull request open on branch `claude/cron-schedule-management`. PGT PO merges and cuts the release with the attached DMG.
 
 ## Next
-- Client Mac acceptance against its installed OpenClaw and a real pending request.
+- Client Mac acceptance against its installed OpenClaw: a real pending request, and one real scheduled job moved and its next run confirmed in OpenClaw.
+- On Frank's Mac after install: read the real job list in Schedules and move the Monday 8 AM jobs by hand (for example toward 3 AM). The app changes nothing on its own.
 - Developer ID signing/notarization if a signing identity becomes available.
 
-No OpenClaw installation or Developer ID signing identity is available on the build Mac. Live request approval/dismissal is not yet verified. No production access was changed.
+No OpenClaw installation or Developer ID signing identity is available on the build Mac. Live request approval/dismissal and live schedule changes are not yet verified. The OpenClaw version, job list, and gateway time zone on Frank's Mac have not been read. No production access or schedule was changed.
