@@ -8,7 +8,7 @@ if args[:1]==['--profile']:
 if profile=='timeout': time.sleep(10)
 if profile=='arguments':
  print(json.dumps({'args':args}));sys.exit()
-# Scheduled jobs. Shapes follow OpenClaw's cron.list and cron.update gateway schema.
+# Scheduled jobs. Shapes follow OpenClaw's cron.list, cron.update, and cron.remove gateway schema.
 def job(id,name,schedule,enabled=True,payload=None,**extra):
  row={'id':id,'name':name,'enabled':enabled,'schedule':schedule,'sessionTarget':'isolated','wakeMode':'now','createdAtMs':1757000000000,'updatedAtMs':1757000000000,
   'payload':payload or {'kind':'agentTurn','message':'Test fixture prompt for '+name+'.'},'state':{}}
@@ -61,6 +61,17 @@ def cron(method,params):
   elif profile=='no-jobs': print(json.dumps({'total':0}))
   else: print('Test startup notice\n'+json.dumps({'jobs':jobs,'total':len(jobs),'offset':0,'limit':50,'hasMore':False,'nextOffset':None}))
   return
+ if method=='cron.remove':
+  # Only the id is sent. An unknown id is an error, as on the gateway.
+  assert set(params)=={'id'}
+  if profile=='unconfirmed': print(json.dumps({'ok':True,'removed':False}));return
+  found=[r for r in jobs if r['id']==params['id']]
+  if not found: print('unknown cron job id: '+params['id']);sys.exit(1)
+  jobs.remove(found[0])
+  if stateful: os.makedirs(os.path.dirname(STATE),exist_ok=True);json.dump(jobs,open(STATE,'w'))
+  result={'ok':True,'removed':True}
+  if params['id']=='test-interval': result['activeRunCancellationRequested']=True
+  print(json.dumps(result));return
  assert method=='cron.update' and set(params)<={'id','patch','expectedConfigRevision'}
  if profile=='conflict': print('cron job definition no longer matches the loaded version; review the latest version before retrying');sys.exit(1)
  row=next(r for r in jobs if r['id']==params['id']);patch=params['patch']

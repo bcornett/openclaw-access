@@ -83,6 +83,12 @@ expectFailure { _ = try client("conflict").apply(.schedule(moved), to: report) }
 expectFailure { _ = try client("auth-failure").jobs() }
 expectFailure { _ = try client("no-jobs").jobs() }
 expectFailure { _ = try normal.apply(.schedule(Schedule(["kind": "at", "at": "2026-10-05T08:00:00Z"])), to: report) }
+// Deleting sends only the id and needs OpenClaw's own confirmation. A run in progress being stopped is reported.
+let stopping = try normal.remove(jobs[1]), quiet = try normal.remove(report)
+assert(stopping && !quiet)
+expectFailure { _ = try normal.remove(try Job(["id": "missing", "enabled": true, "schedule": ["kind": "cron", "expr": "0 8 * * 1"]])) }
+expectFailure { _ = try client("unconfirmed").remove(report) }
+expectFailure { _ = try client("auth-failure").remove(report) }
 expectFailure { _ = try Job(["id": "x", "schedule": ["kind": "cron", "expr": "0 8 * * 1"]]) }
 expectFailure { _ = try Job(["name": "No id", "enabled": true, "schedule": ["kind": "cron"]]) }
 
@@ -105,5 +111,8 @@ for id in ["fx-1", "fx-2"] {
 let after = Cron.load(try client("schedules").jobs(), shift: { _ in 0 })
 assert(after[Slot(day: 1, hour: 8)]?.map(\.id) == ["fx-3", "fx-4"] && after[Slot(day: 1, hour: 3)]?.map(\.id) == ["fx-1"] && after[Slot(day: 1, hour: 4)]?.map(\.id) == ["fx-2"])
 assert(!after.values.contains { $0.count >= Cron.busy })
+if let digest = try client("schedules").jobs().first(where: { $0.id == "fx-3" }) { _ = try client("schedules").remove(digest) }
+let left = try client("schedules").jobs()
+assert(left.count == demo.count - 1 && !left.contains { $0.id == "fx-3" } && Cron.load(left, shift: { _ in 0 })[Slot(day: 1, hour: 8)]?.map(\.id) == ["fx-4"])
 try? FileManager.default.removeItem(at: state)
-print("PASS: gateway list/approve/dismiss, legacy fallback and approval, authentication failure, schema validation, literal arguments, process timeout, schedule parsing and wording, busy-hour counts, job list paging, schedule and pause changes, change conflict")
+print("PASS: gateway list/approve/dismiss, legacy fallback and approval, authentication failure, schema validation, literal arguments, process timeout, schedule parsing and wording, busy-hour counts, job list paging, schedule and pause changes, change conflict, job deletion")
