@@ -111,7 +111,7 @@ struct CLI {
     }
 }
 
-// Scheduled jobs use OpenClaw's cron.list and cron.update gateway methods. Only the fields below are read or written.
+// Scheduled jobs use OpenClaw's cron.list, cron.update, and cron.remove gateway methods. Only the fields below are read or written.
 struct Schedule: Equatable {
     var kind = ""
     var expr = ""
@@ -347,6 +347,12 @@ extension CLI {
         guard updated.id == job.id else { throw Failure(message: "The change returned an unexpected response. Refresh to verify the job before retrying.") }
         return updated
     }
+    // Deletes the job. Returns true when OpenClaw also asked a run of it that was in progress to stop.
+    func remove(_ job: Job) throws -> Bool {
+        let result = try rpc("cron.remove", ["id": job.id])
+        guard result["removed"] as? Bool == true else { throw Failure(message: "OpenClaw did not confirm the job was deleted. Refresh to check before retrying.") }
+        return result["activeRunCancellationRequested"] as? Bool == true
+    }
 }
 
 @MainActor final class Model: ObservableObject {
@@ -405,13 +411,13 @@ extension CLI {
             busy = false
         }
     }
-    func apply(_ change: JobChange, to job: Job, notice text: String, config: Configuration) {
+    // Runs one change and returns its notice. Either way the list is reloaded afterward.
+    private func change(_ config: Configuration, _ work: @escaping @Sendable () throws -> String) {
         guard !busy else { return }
         busy = true; error = nil; notice = ""
         Task {
             do {
-                _ = try await Task.detached { try CLI(config: config).apply(change, to: job) }.value
-                notice = text
+                notice = try await Task.detached(operation: work).value
                 busy = false; refresh(config, clearNotice: false)
             } catch {
                 // A rejected change (a mistyped expression, or a job edited elsewhere) keeps its message and reloads what OpenClaw has now.
@@ -419,6 +425,12 @@ extension CLI {
                 busy = false; refresh(config, keepError: true)
             }
         }
+    }
+    func apply(_ change: JobChange, to job: Job, notice text: String, config: Configuration) {
+        self.change(config) { _ = try CLI(config: config).apply(change, to: job); return text }
+    }
+    func remove(_ job: Job, config: Configuration) {
+        change(config) { try CLI(config: config).remove(job) ? "Deleted \(job.name). Its run in progress was asked to stop." : "Deleted \(job.name)." }
     }
 }
 
@@ -565,6 +577,7 @@ struct SchedulesView: View {
     let openSettings: () -> Void
     @State private var selected: String?
     @State private var focus: Slot?
+    @State private var visit = 0
     var body: some View {
         if model.jobs.isEmpty {
             VStack(spacing: 12) {
@@ -601,13 +614,14 @@ struct SchedulesView: View {
                         }.padding(.vertical, 6).opacity(slot == nil || hot.contains(job) ? 1 : 0.4).tag(job.id)
                     }.frame(minWidth: 250, idealWidth: 290, maxWidth: 340)
                     if let job = model.jobs.first(where: { $0.id == selected }) {
-                        JobDetail(job: job, load: load, locked: model.busy || locked) { change, notice in model.apply(change, to: job, notice: notice, config: config) }
-                            .id("\(job.id) \(job.schedule.expr) \(job.schedule.tz) \(job.schedule.everyMs)").frame(minWidth: 380)
+                        JobDetail(job: job, load: load, locked: model.busy || locked, remove: { model.remove(job, config: config) }) { change, notice in model.apply(change, to: job, notice: notice, config: config) }
+                            // A new identity on every selection and every reload, so the editor always opens on the job's real timing and an unsaved edit never comes back.
+                            .id("\(visit) \(job.id) \(model.lastRefresh?.timeIntervalSinceReferenceDate ?? 0)").frame(minWidth: 380)
                     } else {
                         Text("Select a job to see or change when it runs").foregroundStyle(.secondary).frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-            }
+            }.onChange(of: selected) { _ in visit += 1 }
         }
     }
 }
@@ -666,6 +680,7 @@ struct JobDetail: View {
     let job: Job
     let load: [Slot: [Job]]
     let locked: Bool
+    let remove: () -> Void
     let apply: (JobChange, String) -> Void
     @State private var custom: Bool
     @State private var time: Date
@@ -676,12 +691,13 @@ struct JobDetail: View {
     @State private var unit: Int
     @State private var confirmSave = false
     @State private var confirmToggle = false
+    @State private var confirmDelete = false
     static let units = [(1000, "seconds"), (60_000, "minutes"), (3_600_000, "hours"), (86_400_000, "days")]
     static let limit = 10_000
     // The picker only carries an hour and minute; a fixed winter date keeps daylight-saving gaps out of it.
     static func clock(_ hour: Int, _ minute: Int) -> Date { Calendar.current.date(from: DateComponents(year: 2001, month: 1, day: 15, hour: hour, minute: minute)) ?? Date() }
-    init(job: Job, load: [Slot: [Job]], locked: Bool, apply: @escaping (JobChange, String) -> Void) {
-        self.job = job; self.load = load; self.locked = locked; self.apply = apply
+    init(job: Job, load: [Slot: [Job]], locked: Bool, remove: @escaping () -> Void, apply: @escaping (JobChange, String) -> Void) {
+        self.job = job; self.load = load; self.locked = locked; self.remove = remove; self.apply = apply
         let plan = Cron.plan(job.schedule.expr)
         _custom = State(initialValue: !(plan?.simple ?? false))
         _time = State(initialValue: Self.clock(plan?.hours.min() ?? 3, plan?.minutes.min() ?? 0))
@@ -759,6 +775,7 @@ struct JobDetail: View {
                     editor
                     HStack {
                         Button(job.enabled ? "Pause job" : "Resume job") { confirmToggle = true }
+                        Button("Delete job", role: .destructive) { confirmDelete = true }
                         Spacer()
                         if kind == "cron" || kind == "every" { Button("Save schedule") { confirmSave = true }.buttonStyle(.borderedProminent).disabled(!changed || problem != nil) }
                     }.disabled(locked)
@@ -781,6 +798,10 @@ struct JobDetail: View {
             Button("Cancel", role: .cancel) {}
             Button(job.enabled ? "Pause" : "Resume") { apply(.enabled(!job.enabled), "\(job.enabled ? "Paused" : "Resumed") \(job.name).") }
         } message: { Text(job.enabled ? "\(job.name) will not run again until it is resumed." : "\(job.name) will run on its schedule again.") }
+        .alert("Delete this job?", isPresented: $confirmDelete) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) { remove() }
+        } message: { Text("\(job.name) will be removed from OpenClaw and will not run again. This cannot be undone. To stop it for a while, pause it instead.") }
     }
     private var proposedSimple: String {
         let parts = Calendar.current.dateComponents([.hour, .minute], from: time)
@@ -827,7 +848,7 @@ struct JobDetail: View {
             if let problem { Text(problem).font(.callout).foregroundStyle(.orange) }
             else if changed { Text("New: \(Cron.describe(proposed))").font(.callout) }
         } else {
-            Text("Timing for this kind of job is changed in OpenClaw. It can be paused or resumed here.").font(.callout).foregroundStyle(.secondary)
+            Text("Timing for this kind of job is changed in OpenClaw. It can be paused, resumed, or deleted here.").font(.callout).foregroundStyle(.secondary)
         }
     }
 }

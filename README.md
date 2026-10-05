@@ -30,9 +30,11 @@ The Schedules view lists every scheduled job in OpenClaw with its timing in plai
 - Before you save, the app shows the new timing in plain words and how many other jobs start in that hour, so a job can be moved to a quiet hour, for example from Monday 8:00 AM to Monday 3:00 AM.
 - Every change asks for confirmation. Nothing is changed when the app opens or refreshes.
 - Pause job stops a job from running until Resume job is chosen. It does not delete the job.
+- Delete job removes a job from OpenClaw for good, after a confirmation. It cannot be undone from this app. To stop a job for a while, pause it instead.
+- Choosing another job or refreshing discards an edit that was not saved.
 - Times are in the job's own time zone when it has one, otherwise the time zone of the Mac running the OpenClaw gateway. Busy hours are shown in this Mac's time zone.
 - Busy hours count jobs that run at set times on days of the week. Jobs on an interval, on a day of the month, or on a schedule the app cannot read are listed but not counted, and the view says how many.
-- The app does not create, delete, or run jobs, and does not edit what a job does or where it delivers. OpenClaw's own heartbeat job is shown but cannot be changed here.
+- The app does not create or run jobs, and does not edit what a job does or where it delivers. OpenClaw's own heartbeat job is shown but cannot be changed or deleted here.
 - If OpenClaw rejects a change (for example a mistyped expression, or the job was edited somewhere else since the list was loaded), its message is shown and the list reloads. Nothing is saved in that case.
 
 ## Commands
@@ -60,9 +62,10 @@ Scheduled jobs, same gateway API:
 openclaw gateway call cron.list --params '{"includeDisabled":true}' --json
 openclaw gateway call cron.update --params '{"id":"JOB","patch":{"schedule":{"kind":"cron","expr":"0 3 * * 1"}},"expectedConfigRevision":"REVISION"}' --json
 openclaw gateway call cron.update --params '{"id":"JOB","patch":{"enabled":false}}' --json
+openclaw gateway call cron.remove --params '{"id":"JOB"}' --json
 ```
 
-A schedule change sends only the schedule. The job's time zone, stagger, and interval anchor go back unchanged unless edited. `expectedConfigRevision` is sent when the gateway reports one, so a job edited elsewhere is not overwritten. When the gateway pages the job list, the app follows `hasMore` and `nextOffset`. Changing a job needs the same OpenClaw operator permission as `openclaw cron edit`; there is no CLI fallback for schedules.
+A schedule change sends only the schedule. The job's time zone, stagger, and interval anchor go back unchanged unless edited. `expectedConfigRevision` is sent when the gateway reports one, so a job edited elsewhere is not overwritten. When the gateway pages the job list, the app follows `hasMore` and `nextOffset`. A delete sends only the job id and counts as done only when the gateway answers `removed: true`; if a run of that job was in progress, OpenClaw asks it to stop and the app says so. Changing or deleting a job needs the same OpenClaw operator permission as `openclaw cron edit`; there is no CLI fallback for schedules.
 
 Pairing sources checked September 16, 2026:
 - https://docs.openclaw.ai/cli/pairing
@@ -77,10 +80,13 @@ Schedule sources checked October 4, 2026 (OpenClaw main at 2be4d4f):
 - https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/cron.ts
 - https://github.com/openclaw/openclaw/blob/main/src/cron/stagger.ts
 
+Delete checked October 5, 2026 (OpenClaw main at 38784a3), same files plus:
+- https://github.com/openclaw/openclaw/blob/main/src/cron/service/ops-mutations.ts
+
 ## Build and verification
 
 Run `./build.sh` using the Xcode command-line tools. Run `./test.sh` for isolated CLI integration tests. Run `./ui.sh` to click through the views offscreen against the fixture; it writes a picture of each state to `build/ui` and shows nothing on screen. Run `./package.sh` to build the installer at `build/OpenClaw-Access.dmg`. Fixtures are test-only and are not packaged in the app.
 
-Verified locally: universal binary compilation and code signature, command arguments, gateway list/approve/dismiss contracts, older-version fallback, failure handling, process timeout, and native window rendering. For schedules: reading and wording of schedules, busy-hour counts, job list paging, the exact schedule and pause requests, a rejected change, and a click-through of edit, confirm, save, and resume against the fixture.
+Verified locally: universal binary compilation and code signature, command arguments, gateway list/approve/dismiss contracts, older-version fallback, failure handling, process timeout, and native window rendering. For schedules: reading and wording of schedules, busy-hour counts, job list paging, the exact schedule, pause, and delete requests, a rejected change, and a click-through of edit, confirm, save, resume, and delete against the fixture.
 
 Live OpenClaw changes remain unverified because OpenClaw is not installed on the build Mac. Client acceptance requires refreshing against the real installation, deliberately handling a real pending request, and deliberately moving one real scheduled job and confirming its next run in OpenClaw.

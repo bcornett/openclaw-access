@@ -157,6 +157,19 @@ click(406, 663)                                       // Resume job
 confirm("16-confirm-resume", expect: "will run on its schedule again", press: "Resume")
 shoot("17-resumed")
 guard stored("fx-9")["enabled"] as? Bool == true else { fatalError("The resume did not reach the fixture") }
+// An unsaved edit must not come back: leave the Friday job at 1:00 PM unsaved, return, and one step down from its real 4:00 PM gives 3:00 PM.
+row(5)
+click(457, 590); click(513, 595, times: 3)
+row(4); row(5)
+click(457, 590); click(513, 595)
+click(859, 713)                                       // Save schedule
+confirm("18-fresh-editor", expect: "New: Fridays at 3:00 PM", press: "Cancel")
+row(4); row(5)
+shoot("19-before-delete", crop: pane)
+click(493, 663)                                       // Delete job
+confirm("20-confirm-delete", expect: "will be removed from OpenClaw", press: "Delete")
+shoot("21-deleted")
+guard stored("fx-6").isEmpty, !stored("fx-4").isEmpty else { fatalError("The delete did not reach the fixture") }
 guard (stored("fx-5")["schedule"] as? [String: Any])?["expr"] as? String == "30 2 * * *" else { fatalError("An unsaved edit changed the fixture") }
 try? FileManager.default.removeItem(atPath: state)
-print("PASS: schedule edit and resume clicked through the UI and confirmed in the fixture")
+print("PASS: schedule edit, resume, and delete clicked through the UI and confirmed in the fixture")
